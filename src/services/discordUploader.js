@@ -109,8 +109,9 @@ const uploadChapters = async (channel, manga) => {
         )
       } else {
         const sizeLabel = pdfSize ? `${toMB(pdfSize)} MB` : 'unknown size'
+        const pdfName = require('path').basename(chapter.pdf)
         await channel.send({
-          content: `⚠️ PDF quá lớn (${sizeLabel}), bỏ qua: \`${chapter.pdf}\``,
+          content: `⚠️ PDF quá lớn (${sizeLabel}), bỏ qua: \`${pdfName}\``,
         })
       }
     }
