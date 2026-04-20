@@ -131,16 +131,67 @@ const uploadToTextChannel = async (channel, manga) => {
 }
 
 /**
+ * Resolve genre names to forum tag IDs.
+ * Creates missing tags automatically (up to Discord's 20-tag forum limit).
+ * Returns at most 5 tag IDs (Discord's per-post limit).
+ */
+const resolveForumTags = async (forumChannel, genres) => {
+  if (!genres || genres.length === 0) return []
+
+  const targetGenres = genres.slice(0, 5)
+  const existingTags = forumChannel.availableTags
+  const tagIds = []
+  const toCreate = []
+
+  for (const genre of targetGenres) {
+    const match = existingTags.find((t) => t.name.toLowerCase() === genre.toLowerCase())
+    if (match) {
+      tagIds.push(match.id)
+    } else {
+      toCreate.push(genre)
+    }
+  }
+
+  if (toCreate.length > 0) {
+    const slotsLeft = 20 - existingTags.length
+    const canCreate = toCreate.slice(0, slotsLeft)
+
+    if (canCreate.length > 0) {
+      console.log(`[forum] Creating ${canCreate.length} new tag(s): ${canCreate.join(', ')}`)
+      const newTagDefs = canCreate.map((name) => ({ name, moderated: false }))
+      const updated = await forumChannel.edit({
+        availableTags: [...existingTags, ...newTagDefs],
+      })
+      for (const genre of canCreate) {
+        const tag = updated.availableTags.find(
+          (t) => t.name.toLowerCase() === genre.toLowerCase()
+        )
+        if (tag) tagIds.push(tag.id)
+      }
+    }
+  }
+
+  return tagIds.slice(0, 5)
+}
+
+/**
  * Upload to a Forum channel: create a new post with cover + info as the
  * opening message, then upload chapters inside the resulting thread.
+ * Tags are auto-resolved from manga genres.
  */
 const uploadToForum = async (forumChannel, manga) => {
-  const coverFiles = manga.coverPath
-    ? [new AttachmentBuilder(manga.coverPath)]
-    : []
+  const coverFiles = manga.coverPath ? [new AttachmentBuilder(manga.coverPath)] : []
+
+  let appliedTags = []
+  try {
+    appliedTags = await resolveForumTags(forumChannel, manga.genres)
+  } catch (err) {
+    console.warn(`[forum] Could not resolve tags: ${err.message}`)
+  }
 
   const thread = await forumChannel.threads.create({
     name: manga.title,
+    appliedTags,
     message: {
       content: buildInfoText(manga),
       files: coverFiles,
