@@ -1,5 +1,5 @@
 const { SlashCommandBuilder, ChannelType } = require('discord.js')
-const { getManga } = require('../services/libraryReader')
+const { getLibrary, getManga } = require('../services/libraryReader')
 const { uploadManga } = require('../services/discordUploader')
 const { downloadPath } = require('../config')
 
@@ -10,8 +10,9 @@ module.exports = {
     .addStringOption((opt) =>
       opt
         .setName('manga')
-        .setDescription('Slug của manga (dùng /list để xem danh sách)')
+        .setDescription('Chọn manga từ danh sách')
         .setRequired(true)
+        .setAutocomplete(true)
     )
     .addChannelOption((opt) =>
       opt
@@ -20,6 +21,30 @@ module.exports = {
         .addChannelTypes(ChannelType.GuildText, ChannelType.GuildForum)
         .setRequired(false)
     ),
+
+  async autocomplete(interaction) {
+    const focused = interaction.options.getFocused().toLowerCase()
+    let library = []
+    try {
+      library = getLibrary(downloadPath)
+    } catch {
+      return interaction.respond([])
+    }
+
+    const results = library
+      .filter(
+        (m) =>
+          m.slug.toLowerCase().includes(focused) ||
+          m.title.toLowerCase().includes(focused)
+      )
+      .slice(0, 25) // Discord giới hạn tối đa 25 gợi ý
+      .map((m) => ({
+        name: `${m.title} (${m.chapterCount} chapters)`,
+        value: m.slug,
+      }))
+
+    await interaction.respond(results)
+  },
 
   async execute(interaction) {
     const slug = interaction.options.getString('manga')

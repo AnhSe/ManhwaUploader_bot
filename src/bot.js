@@ -21,10 +21,20 @@ client.once('clientReady', () => {
 })
 
 client.on('interactionCreate', async (interaction) => {
-  if (!interaction.isChatInputCommand()) return
-
   const command = client.commands.get(interaction.commandName)
   if (!command) return
+
+  // Autocomplete
+  if (interaction.isAutocomplete()) {
+    try {
+      await command.autocomplete(interaction)
+    } catch (err) {
+      console.error(`[autocomplete:${interaction.commandName}]`, err)
+    }
+    return
+  }
+
+  if (!interaction.isChatInputCommand()) return
 
   try {
     await command.execute(interaction)
