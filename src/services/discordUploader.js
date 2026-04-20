@@ -1,76 +1,163 @@
 const fs = require('fs')
-const { AttachmentBuilder } = require('discord.js')
+const { AttachmentBuilder, ChannelType } = require('discord.js')
 
 const SEPARATOR = '─'.repeat(40)
-const BATCH_SIZE = 10
-const FILE_SIZE_LIMIT = 25 * 1024 * 1024 // 25 MB
+const MAX_FILES_PER_BATCH = 10
+const MAX_BATCH_BYTES = 9 * 1024 * 1024 // 9 MB — safe limit under Discord's 10 MB cap (no boost)
 
 const formatDate = (isoDate) => {
   if (!isoDate) return 'Unknown'
   return new Date(isoDate).toLocaleDateString('vi-VN')
 }
 
-const isFileSafe = (filePath) => {
+const getFileSize = (filePath) => {
   try {
-    return fs.statSync(filePath).size <= FILE_SIZE_LIMIT
+    return fs.statSync(filePath).size
   } catch {
-    return false
+    return null
   }
 }
 
-const sendImageBatch = async (channel, imagePaths) => {
-  const safe = imagePaths.filter(isFileSafe)
-  if (safe.length > 0) {
-    await channel.send({ files: safe.map((p) => new AttachmentBuilder(p)) })
+const toMB = (bytes) => (bytes / 1024 / 1024).toFixed(1)
+
+/**
+ * Split image paths into batches respecting both file count (10) and
+ * total message size (9 MB safe limit) constraints.
+ */
+const buildBatches = (imagePaths) => {
+  const batches = []
+  let currentBatch = []
+  let currentSize = 0
+
+  for (const imgPath of imagePaths) {
+    const size = getFileSize(imgPath)
+    if (size === null) continue
+
+    if (size > MAX_BATCH_BYTES) {
+      console.warn(`[uploader] Skipping oversized image (${toMB(size)} MB): ${imgPath}`)
+      continue
+    }
+
+    const wouldExceedSize = currentSize + size > MAX_BATCH_BYTES
+    const wouldExceedCount = currentBatch.length >= MAX_FILES_PER_BATCH
+
+    if ((wouldExceedSize || wouldExceedCount) && currentBatch.length > 0) {
+      batches.push(currentBatch)
+      currentBatch = []
+      currentSize = 0
+    }
+
+    currentBatch.push(imgPath)
+    currentSize += size
+  }
+
+  if (currentBatch.length > 0) batches.push(currentBatch)
+  return batches
+}
+
+const safeSend = async (channel, options, label) => {
+  try {
+    await channel.send(options)
+  } catch (err) {
+    console.error(`[uploader] Failed to send ${label}: ${err.message}`)
+    await channel.send({ content: `⚠️ Không thể upload: \`${label}\` (${err.message})` })
   }
 }
 
-const uploadManga = async (channel, manga) => {
-  // Cover
-  if (manga.coverPath) {
-    await channel.send({ files: [new AttachmentBuilder(manga.coverPath)] })
-  }
-
-  // Manga info
+const buildInfoText = (manga) => {
   const description =
     manga.description.length > 500
       ? manga.description.slice(0, 497) + '...'
       : manga.description
 
-  const infoLines = [
+  const lines = [
     `📖 **${manga.title}**`,
     `👤 **Author:** ${manga.author}`,
     `🎨 **Artist:** ${manga.artist}`,
     `🏷️ **Genres:** ${manga.genres.join(', ') || 'N/A'}`,
     `📅 **Latest Chapter:** ${formatDate(manga.latestChapterDate)}`,
   ]
-  if (description) infoLines.push(`\n📝 ${description}`)
+  if (description) lines.push(`\n📝 ${description}`)
+  return lines.join('\n')
+}
 
-  await channel.send({ content: infoLines.join('\n') })
+/**
+ * Upload all chapters into a channel/thread (no cover or info header).
+ */
+const uploadChapters = async (channel, manga) => {
   await channel.send({ content: SEPARATOR })
 
-  // Chapter loop
   for (const chapter of manga.chapters) {
     await channel.send({ content: `📄 **${chapter.name}**` })
 
-    // PNGs in order, batched
-    for (let i = 0; i < chapter.images.length; i += BATCH_SIZE) {
-      await sendImageBatch(channel, chapter.images.slice(i, i + BATCH_SIZE))
+    const batches = buildBatches(chapter.images)
+    for (let i = 0; i < batches.length; i++) {
+      await safeSend(
+        channel,
+        { files: batches[i].map((p) => new AttachmentBuilder(p)) },
+        `${chapter.name} batch ${i + 1}/${batches.length}`
+      )
     }
 
-    // PDF
     if (chapter.pdf) {
-      if (isFileSafe(chapter.pdf)) {
-        await channel.send({ files: [new AttachmentBuilder(chapter.pdf)] })
+      const pdfSize = getFileSize(chapter.pdf)
+      if (pdfSize !== null && pdfSize <= MAX_BATCH_BYTES) {
+        await safeSend(
+          channel,
+          { files: [new AttachmentBuilder(chapter.pdf)] },
+          `${chapter.name}.pdf`
+        )
       } else {
+        const sizeLabel = pdfSize ? `${toMB(pdfSize)} MB` : 'unknown size'
         await channel.send({
-          content: `⚠️ PDF quá lớn (>25MB), bỏ qua: \`${chapter.pdf}\``,
+          content: `⚠️ PDF quá lớn (${sizeLabel}), bỏ qua: \`${chapter.pdf}\``,
         })
       }
     }
 
     await channel.send({ content: SEPARATOR })
   }
+}
+
+/**
+ * Upload to a regular text channel: cover → info → chapters.
+ */
+const uploadToTextChannel = async (channel, manga) => {
+  if (manga.coverPath) {
+    await safeSend(channel, { files: [new AttachmentBuilder(manga.coverPath)] }, 'cover')
+  }
+  await channel.send({ content: buildInfoText(manga) })
+  await uploadChapters(channel, manga)
+}
+
+/**
+ * Upload to a Forum channel: create a new post with cover + info as the
+ * opening message, then upload chapters inside the resulting thread.
+ */
+const uploadToForum = async (forumChannel, manga) => {
+  const coverFiles = manga.coverPath
+    ? [new AttachmentBuilder(manga.coverPath)]
+    : []
+
+  const thread = await forumChannel.threads.create({
+    name: manga.title,
+    message: {
+      content: buildInfoText(manga),
+      files: coverFiles,
+    },
+  })
+
+  await uploadChapters(thread, manga)
+}
+
+/**
+ * Main entry — auto-detects channel type and routes accordingly.
+ */
+const uploadManga = async (channel, manga) => {
+  if (channel.type === ChannelType.GuildForum) {
+    return uploadToForum(channel, manga)
+  }
+  return uploadToTextChannel(channel, manga)
 }
 
 module.exports = { uploadManga }

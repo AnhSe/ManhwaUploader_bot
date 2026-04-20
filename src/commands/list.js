@@ -14,12 +14,12 @@ module.exports = {
     } catch (err) {
       return interaction.reply({
         content: `❌ Không đọc được thư mục: \`${downloadPath}\`\n${err.message}`,
-        ephemeral: true,
+        flags: 64,
       })
     }
 
     if (library.length === 0) {
-      return interaction.reply({ content: '❌ Không tìm thấy manga nào.', ephemeral: true })
+      return interaction.reply({ content: '❌ Không tìm thấy manga nào.', flags: 64 })
     }
 
     const lines = library.map(
@@ -39,9 +39,9 @@ module.exports = {
     }
     if (current) chunks.push(current)
 
-    await interaction.reply({ content: chunks[0], ephemeral: true })
+    await interaction.reply({ content: chunks[0], flags: 64 })
     for (const chunk of chunks.slice(1)) {
-      await interaction.followUp({ content: chunk, ephemeral: true })
+      await interaction.followUp({ content: chunk, flags: 64 })
     }
   },
 }

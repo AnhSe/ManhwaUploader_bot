@@ -15,7 +15,7 @@ for (const file of commandFiles) {
   client.commands.set(command.data.name, command)
 }
 
-client.once('ready', () => {
+client.once('clientReady', () => {
   console.log(`✅ Bot online: ${client.user.tag}`)
   console.log(`📚 Commands loaded: ${[...client.commands.keys()].join(', ')}`)
 })
@@ -30,7 +30,7 @@ client.on('interactionCreate', async (interaction) => {
     await command.execute(interaction)
   } catch (err) {
     console.error(`[${interaction.commandName}]`, err)
-    const reply = { content: '❌ Có lỗi xảy ra khi thực hiện lệnh.', ephemeral: true }
+    const reply = { content: '❌ Có lỗi xảy ra khi thực hiện lệnh.', flags: 64 }
     if (interaction.replied || interaction.deferred) {
       await interaction.followUp(reply)
     } else {

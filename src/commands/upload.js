@@ -6,7 +6,7 @@ const { downloadPath } = require('../config')
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('upload')
-    .setDescription('Upload toàn bộ một manhwa lên Discord channel')
+    .setDescription('Upload toàn bộ một manhwa lên Discord channel hoặc Forum')
     .addStringOption((opt) =>
       opt
         .setName('manga')
@@ -16,8 +16,8 @@ module.exports = {
     .addChannelOption((opt) =>
       opt
         .setName('channel')
-        .setDescription('Channel để upload (mặc định: channel hiện tại)')
-        .addChannelTypes(ChannelType.GuildText)
+        .setDescription('Text channel hoặc Forum channel để upload')
+        .addChannelTypes(ChannelType.GuildText, ChannelType.GuildForum)
         .setRequired(false)
     ),
 
@@ -29,26 +29,31 @@ module.exports = {
     if (!manga) {
       return interaction.reply({
         content: `❌ Không tìm thấy manga: \`${slug}\`\nDùng \`/list\` để xem danh sách.`,
-        ephemeral: true,
+        flags: 64,
       })
     }
 
+    const isForum = targetChannel.type === ChannelType.GuildForum
+    const destination = isForum
+      ? `Forum **${targetChannel.name}** (tạo post mới)`
+      : `${targetChannel}`
+
     await interaction.reply({
-      content: `✅ Bắt đầu upload **${manga.title}** (${manga.chapters.length} chapters) → ${targetChannel}`,
-      ephemeral: true,
+      content: `✅ Bắt đầu upload **${manga.title}** (${manga.chapters.length} chapters) → ${destination}`,
+      flags: 64,
     })
 
     try {
       await uploadManga(targetChannel, manga)
       await interaction.followUp({
         content: `🎉 Upload hoàn tất **${manga.title}**!`,
-        ephemeral: true,
+        flags: 64,
       })
     } catch (err) {
       console.error('[upload]', err)
       await interaction.followUp({
         content: `❌ Lỗi khi upload: ${err.message}`,
-        ephemeral: true,
+        flags: 64,
       })
     }
   },
