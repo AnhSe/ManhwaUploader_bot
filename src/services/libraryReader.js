@@ -24,6 +24,14 @@ const asArray = (value) => (Array.isArray(value) ? value : [])
 const getMetadataChapterCount = (meta) =>
   Array.isArray(meta.chapterList) ? meta.chapterList.length : null
 
+const getCoverPath = (mangaPath) => {
+  const entries = fs.readdirSync(mangaPath, { withFileTypes: true })
+  const cover = entries.find(
+    (e) => e.isFile() && /^cover\.(png|jpe?g|webp)$/i.test(e.name)
+  )
+  return cover ? path.join(mangaPath, cover.name) : null
+}
+
 const getChapterFiles = (chapterPath) => {
   const entries = fs.readdirSync(chapterPath)
 
@@ -82,7 +90,7 @@ const getManga = (downloadPath, slug) => {
   const chapters = getChapters(mangaPath)
   const metadataChapterCount = getMetadataChapterCount(meta)
 
-  const coverPath = path.join(mangaPath, 'cover.jpg')
+  const coverPath = getCoverPath(mangaPath)
 
   return {
     slug,
@@ -99,7 +107,7 @@ const getManga = (downloadPath, slug) => {
     startDate: info.startDate || 'Unknown',
     endDate: info.endDate || 'Unknown',
     totalChapters: metadataChapterCount ?? chapters.length,
-    coverPath: fs.existsSync(coverPath) ? coverPath : null,
+    coverPath,
     chapters,
   }
 }

@@ -74,22 +74,22 @@ const safeSend = async (channel, options, label) => {
 
 const buildInfoText = (manga) => {
   const lines = [
-    `**${manga.title}**`,
-    `Alt Titles: ${formatList(manga.altTitles)}`,
-    `Author: ${formatValue(manga.author)}`,
-    `Artist: ${formatValue(manga.artist)}`,
-    `Status: ${formatValue(manga.status)}`,
-    `Publication Year: ${formatValue(manga.publicationYear)}`,
-    `Genres: ${formatList(manga.genres)}`,
-    `Tags: ${formatList(manga.tags)}`,
-    `Start Date: ${formatValue(manga.startDate)}`,
-    `End Date: ${formatValue(manga.endDate)}`,
-    `Total Chapters: ${formatValue(manga.totalChapters)}`,
+    `📖 **${manga.title}**`,
+    `🔖 **Alt Titles:** ${formatList(manga.altTitles)}`,
+    `✍️ **Author:** ${formatValue(manga.author)}`,
+    `🎨 **Artist:** ${formatValue(manga.artist)}`,
+    `📌 **Status:** ${formatValue(manga.status)}`,
+    `🗓️ **Publication Year:** ${formatValue(manga.publicationYear)}`,
+    `🏷️ **Genres:** ${formatList(manga.genres)}`,
+    `🧾 **Tags:** ${formatList(manga.tags)}`,
+    `▶️ **Start Date:** ${formatValue(manga.startDate)}`,
+    `⏹️ **End Date:** ${formatValue(manga.endDate)}`,
+    `📚 **Total Chapters:** ${formatValue(manga.totalChapters)}`,
   ]
 
   if (manga.description) {
     const prefix = lines.join('\n')
-    const descriptionPrefix = '\n\nDescription: '
+    const descriptionPrefix = '\n\n📝 **Description:** '
     const remaining = MAX_INFO_TEXT_CHARS - prefix.length - descriptionPrefix.length
     if (remaining > 0) {
       lines.push(`${descriptionPrefix}${truncate(manga.description, remaining)}`)
@@ -129,7 +129,7 @@ const uploadChapters = async (channel, manga) => {
         const sizeLabel = pdfSize ? `${toMB(pdfSize)} MB` : 'unknown size'
         const pdfName = path.basename(chapter.pdf)
         await channel.send({
-          content: `PDF qua lon (${sizeLabel}), bo qua: \`${pdfName}\``,
+          content: `PDF is too large (${sizeLabel}), skipped: \`${pdfName}\``,
         })
       }
     }
