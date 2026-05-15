@@ -1,14 +1,11 @@
 const fs = require('fs')
+const path = require('path')
 const { AttachmentBuilder, ChannelType } = require('discord.js')
 
-const SEPARATOR = '─'.repeat(40)
+const SEPARATOR = '-'.repeat(40)
 const MAX_FILES_PER_BATCH = 10
-const MAX_BATCH_BYTES = 9 * 1024 * 1024 // 9 MB — safe limit under Discord's 10 MB cap (no boost)
-
-const formatDate = (isoDate) => {
-  if (!isoDate) return 'Unknown'
-  return new Date(isoDate).toLocaleDateString('vi-VN')
-}
+const MAX_BATCH_BYTES = 9 * 1024 * 1024 // 9 MB safe limit under Discord's 10 MB cap (no boost)
+const MAX_INFO_TEXT_CHARS = 1900
 
 const getFileSize = (filePath) => {
   try {
@@ -19,6 +16,17 @@ const getFileSize = (filePath) => {
 }
 
 const toMB = (bytes) => (bytes / 1024 / 1024).toFixed(1)
+
+const formatValue = (value) => value || 'Unknown'
+
+const formatList = (items) =>
+  Array.isArray(items) && items.length > 0 ? items.join(', ') : 'N/A'
+
+const truncate = (text, maxLength) => {
+  if (!text || text.length <= maxLength) return text
+  if (maxLength <= 3) return '...'.slice(0, maxLength)
+  return text.slice(0, maxLength - 3) + '...'
+}
 
 /**
  * Split image paths into batches respecting both file count (10) and
@@ -60,24 +68,34 @@ const safeSend = async (channel, options, label) => {
     await channel.send(options)
   } catch (err) {
     console.error(`[uploader] Failed to send ${label}: ${err.message}`)
-    await channel.send({ content: `⚠️ Không thể upload: \`${label}\` (${err.message})` })
+    await channel.send({ content: `Warning: could not upload \`${label}\` (${err.message})` })
   }
 }
 
 const buildInfoText = (manga) => {
-  const description =
-    manga.description.length > 500
-      ? manga.description.slice(0, 497) + '...'
-      : manga.description
-
   const lines = [
-    `📖 **${manga.title}**`,
-    `👤 **Author:** ${manga.author}`,
-    `🎨 **Artist:** ${manga.artist}`,
-    `🏷️ **Genres:** ${manga.genres.join(', ') || 'N/A'}`,
-    `📅 **Latest Chapter:** ${formatDate(manga.latestChapterDate)}`,
+    `**${manga.title}**`,
+    `Alt Titles: ${formatList(manga.altTitles)}`,
+    `Author: ${formatValue(manga.author)}`,
+    `Artist: ${formatValue(manga.artist)}`,
+    `Status: ${formatValue(manga.status)}`,
+    `Publication Year: ${formatValue(manga.publicationYear)}`,
+    `Genres: ${formatList(manga.genres)}`,
+    `Tags: ${formatList(manga.tags)}`,
+    `Start Date: ${formatValue(manga.startDate)}`,
+    `End Date: ${formatValue(manga.endDate)}`,
+    `Total Chapters: ${formatValue(manga.totalChapters)}`,
   ]
-  if (description) lines.push(`\n📝 ${description}`)
+
+  if (manga.description) {
+    const prefix = lines.join('\n')
+    const descriptionPrefix = '\n\nDescription: '
+    const remaining = MAX_INFO_TEXT_CHARS - prefix.length - descriptionPrefix.length
+    if (remaining > 0) {
+      lines.push(`${descriptionPrefix}${truncate(manga.description, remaining)}`)
+    }
+  }
+
   return lines.join('\n')
 }
 
@@ -88,7 +106,7 @@ const uploadChapters = async (channel, manga) => {
   await channel.send({ content: SEPARATOR })
 
   for (const chapter of manga.chapters) {
-    await channel.send({ content: `📄 **${chapter.name}**` })
+    await channel.send({ content: `**${chapter.name}**` })
 
     const batches = buildBatches(chapter.images)
     for (let i = 0; i < batches.length; i++) {
@@ -109,9 +127,9 @@ const uploadChapters = async (channel, manga) => {
         )
       } else {
         const sizeLabel = pdfSize ? `${toMB(pdfSize)} MB` : 'unknown size'
-        const pdfName = require('path').basename(chapter.pdf)
+        const pdfName = path.basename(chapter.pdf)
         await channel.send({
-          content: `⚠️ PDF quá lớn (${sizeLabel}), bỏ qua: \`${pdfName}\``,
+          content: `PDF qua lon (${sizeLabel}), bo qua: \`${pdfName}\``,
         })
       }
     }
@@ -121,7 +139,7 @@ const uploadChapters = async (channel, manga) => {
 }
 
 /**
- * Upload to a regular text channel: cover → info → chapters.
+ * Upload to a regular text channel: cover, info, then chapters.
  */
 const uploadToTextChannel = async (channel, manga) => {
   if (manga.coverPath) {
@@ -178,7 +196,7 @@ const resolveForumTags = async (forumChannel, genres) => {
 /**
  * Upload to a Forum channel: create a new post with cover + info as the
  * opening message, then upload chapters inside the resulting thread.
- * Tags are auto-resolved from manga genres.
+ * Forum tags are auto-resolved from manga genres only.
  */
 const uploadToForum = async (forumChannel, manga) => {
   const coverFiles = manga.coverPath ? [new AttachmentBuilder(manga.coverPath)] : []
@@ -203,7 +221,7 @@ const uploadToForum = async (forumChannel, manga) => {
 }
 
 /**
- * Main entry — auto-detects channel type and routes accordingly.
+ * Main entry. Auto-detects channel type and routes accordingly.
  */
 const uploadManga = async (channel, manga) => {
   if (channel.type === ChannelType.GuildForum) {

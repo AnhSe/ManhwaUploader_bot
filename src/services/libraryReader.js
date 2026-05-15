@@ -11,6 +11,19 @@ const extractNumber = (str) => {
 const formatTitle = (slug) =>
   slug.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 
+const readMetadata = (mangaPath) => {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(mangaPath, 'metadata.json'), 'utf-8'))
+  } catch {
+    return {}
+  }
+}
+
+const asArray = (value) => (Array.isArray(value) ? value : [])
+
+const getMetadataChapterCount = (meta) =>
+  Array.isArray(meta.chapterList) ? meta.chapterList.length : null
+
 const getChapterFiles = (chapterPath) => {
   const entries = fs.readdirSync(chapterPath)
 
@@ -46,42 +59,48 @@ const getLibrary = (downloadPath) => {
     .filter((e) => e.isDirectory())
     .map((e) => {
       const mangaPath = path.join(downloadPath, e.name)
-      let meta = {}
-      try {
-        meta = JSON.parse(fs.readFileSync(path.join(mangaPath, 'metadata.json'), 'utf-8'))
-      } catch {}
+      const meta = readMetadata(mangaPath)
+      const chapters = getChapters(mangaPath)
+      const metadataChapterCount = getMetadataChapterCount(meta)
       return {
         slug: e.name,
         path: mangaPath,
         title: meta.mangaInfo?.title || formatTitle(e.name),
-        chapterCount: getChapters(mangaPath).length,
+        chapterCount: metadataChapterCount ?? chapters.length,
+        chaptersOnDisk: chapters.length,
       }
     })
-    .filter((m) => m.chapterCount > 0)
+    .filter((m) => m.chaptersOnDisk > 0)
 }
 
 const getManga = (downloadPath, slug) => {
   const mangaPath = path.join(downloadPath, slug)
   if (!fs.existsSync(mangaPath)) return null
 
-  let meta = {}
-  try {
-    meta = JSON.parse(fs.readFileSync(path.join(mangaPath, 'metadata.json'), 'utf-8'))
-  } catch {}
+  const meta = readMetadata(mangaPath)
+  const info = meta.mangaInfo || {}
+  const chapters = getChapters(mangaPath)
+  const metadataChapterCount = getMetadataChapterCount(meta)
 
   const coverPath = path.join(mangaPath, 'cover.jpg')
 
   return {
     slug,
     path: mangaPath,
-    title: meta.mangaInfo?.title || formatTitle(slug),
-    author: meta.mangaInfo?.author || 'Unknown',
-    artist: meta.mangaInfo?.artist || 'Unknown',
-    genres: meta.mangaInfo?.genres || [],
-    description: meta.mangaInfo?.description || '',
-    latestChapterDate: meta.mangaInfo?.latestChapterDate || null,
+    title: info.title || formatTitle(slug),
+    altTitles: asArray(info.altTitles),
+    author: info.author || 'Unknown',
+    artist: info.artist || 'Unknown',
+    status: info.status || 'Unknown',
+    publicationYear: info.publicationYear || 'Unknown',
+    genres: asArray(info.genres),
+    tags: asArray(info.tags),
+    description: info.description || '',
+    startDate: info.startDate || 'Unknown',
+    endDate: info.endDate || 'Unknown',
+    totalChapters: metadataChapterCount ?? chapters.length,
     coverPath: fs.existsSync(coverPath) ? coverPath : null,
-    chapters: getChapters(mangaPath),
+    chapters,
   }
 }
 
